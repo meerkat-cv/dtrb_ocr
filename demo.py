@@ -43,6 +43,10 @@ def demo(opt):
 
     # predict
     model.eval()
+
+
+
+
     with torch.no_grad():
         for image_tensors, image_path_list in demo_loader:
             batch_size = image_tensors.size(0)
