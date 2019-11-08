@@ -1,5 +1,6 @@
 import string
 import argparse
+import time
 
 import torch
 import torch.backends.cudnn as cudnn
@@ -10,6 +11,7 @@ from utils import CTCLabelConverter, AttnLabelConverter
 from dataset import RawDataset, AlignCollate
 from model import Model
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+# device = torch.device('cpu')
 
 
 def demo(opt):
@@ -31,6 +33,8 @@ def demo(opt):
     # load model
     print('loading pretrained model from %s' % opt.saved_model)
     model.load_state_dict(torch.load(opt.saved_model))
+    # model.load_state_dict(torch.load(
+    #     opt.saved_model, map_location=lambda storage, loc: storage))
 
     # prepare data. two demo images from https://github.com/bgshih/crnn#run-demo
     AlignCollate_demo = AlignCollate(imgH=opt.imgH, imgW=opt.imgW, keep_ratio_with_pad=opt.PAD)
@@ -43,14 +47,24 @@ def demo(opt):
 
     # predict
     model.eval()
+    time.sleep(2)
 
 
-
+    time.sleep(2)
 
     with torch.no_grad():
         for image_tensors, image_path_list in demo_loader:
+            time.sleep(2)
+
+            print("image_tensors: ", image_tensors)
+            print("image_tensors.shape: ", image_tensors.shape)
+
             batch_size = image_tensors.size(0)
             image = image_tensors.to(device)
+            print("image: ", image)
+            print("image.shape: ", image.shape)
+            # exit()
+
             # For max length prediction
             length_for_pred = torch.IntTensor([opt.batch_max_length] * batch_size).to(device)
             text_for_pred = torch.LongTensor(batch_size, opt.batch_max_length + 1).fill_(0).to(device)
@@ -71,9 +85,9 @@ def demo(opt):
                 _, preds_index = preds.max(2)
                 preds_str = converter.decode(preds_index, length_for_pred)
 
-            print('-' * 80)
-            print(f'{"image_path":25s}\t{"predicted_labels":25s}\tconfidence score')
-            print('-' * 80)
+            # print('-' * 80)
+            # print(f'{"image_path":25s}\t{"predicted_labels":25s}\tconfidence score')
+            # print('-' * 80)
             preds_prob = F.softmax(preds, dim=2)
             preds_max_prob, _ = preds_prob.max(dim=2)
             for img_name, pred, pred_max_prob in zip(image_path_list, preds_str, preds_max_prob):
@@ -81,11 +95,12 @@ def demo(opt):
                     pred_EOS = pred.find('[s]')
                     pred = pred[:pred_EOS]  # prune after "end of sentence" token ([s])
                     pred_max_prob = pred_max_prob[:pred_EOS]
+                    time.sleep(2)
 
                 # calculate confidence score (= multiply of pred_max_prob)
                 confidence_score = pred_max_prob.cumprod(dim=0)[-1]
 
-                # print(f'{img_name}\t{pred}\t{confidence_score:0.4f}')
+                print(f'{img_name}\t{pred}\t{confidence_score:0.4f}')
                 print(f'{img_name:25s}\t{pred:25s}\t{confidence_score:0.4f}')
 
 
@@ -122,6 +137,6 @@ if __name__ == '__main__':
 
     cudnn.benchmark = True
     cudnn.deterministic = True
-    opt.num_gpu = torch.cuda.device_count()
+    opt.num_gpu = 0 #torch.cuda.device_count()
 
     demo(opt)
