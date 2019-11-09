@@ -2,6 +2,7 @@
 **/data_lmdb_release/*
 **/image_release/*
 **/result/*
+**/dtrb_ocr/*
 *.mdb
 *.pth
 *.tar
@@ -11,6 +12,13 @@
 *.zip
 *.eps
 *.pdf
+
+# Vim Swap: https://github.com/github/gitignore/blob/master/Global/Vim.gitignore
+[._]*.s[a-v][a-z]
+[._]*.sw[a-p]
+[._]s[a-rt-v][a-z]
+[._]ss[a-gi-z]
+[._]sw[a-p]
 
 ### Linux ###
 *~
