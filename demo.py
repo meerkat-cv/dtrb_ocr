@@ -47,23 +47,11 @@ def demo(opt):
 
     # predict
     model.eval()
-    time.sleep(2)
-
-
-    time.sleep(2)
 
     with torch.no_grad():
         for image_tensors, image_path_list in demo_loader:
-            time.sleep(2)
-
-            print("image_tensors: ", image_tensors)
-            print("image_tensors.shape: ", image_tensors.shape)
-
             batch_size = image_tensors.size(0)
             image = image_tensors.to(device)
-            print("image: ", image)
-            print("image.shape: ", image.shape)
-            # exit()
 
             # For max length prediction
             length_for_pred = torch.IntTensor([opt.batch_max_length] * batch_size).to(device)
@@ -85,9 +73,6 @@ def demo(opt):
                 _, preds_index = preds.max(2)
                 preds_str = converter.decode(preds_index, length_for_pred)
 
-            # print('-' * 80)
-            # print(f'{"image_path":25s}\t{"predicted_labels":25s}\tconfidence score')
-            # print('-' * 80)
             preds_prob = F.softmax(preds, dim=2)
             preds_max_prob, _ = preds_prob.max(dim=2)
             for img_name, pred, pred_max_prob in zip(image_path_list, preds_str, preds_max_prob):
@@ -95,7 +80,6 @@ def demo(opt):
                     pred_EOS = pred.find('[s]')
                     pred = pred[:pred_EOS]  # prune after "end of sentence" token ([s])
                     pred_max_prob = pred_max_prob[:pred_EOS]
-                    time.sleep(2)
 
                 # calculate confidence score (= multiply of pred_max_prob)
                 confidence_score = pred_max_prob.cumprod(dim=0)[-1]
