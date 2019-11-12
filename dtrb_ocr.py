@@ -15,7 +15,8 @@ from .dataset import ResizeNormalize
 from .model import Model
 
 # the following is the alphabet, we're not supporting case-sensitive yet.
-character = '0123456789abcdefghijklmnopqrstuvwxyz'
+# character = '0123456789abcdefghijklmnopqrstuvwxyz'
+character = '0123456789abcdefghijklmnopqrstuvwxyz/:,.()-'
 
 class DTRB_OCR:
 
@@ -27,7 +28,7 @@ class DTRB_OCR:
         # IMPORTANT: will define a lot of params given the model_name
         filename, file_extension = os.path.splitext(os.path.basename(model_path))
 
-        s_transformer, s_feature, s_sequence_model, s_prediction = filename.split("-")
+        s_transformer, s_feature, s_sequence_model, s_prediction = filename.split("-")[:4]
         logging.warning("s_transformer: "+str(s_transformer))
         if 'CTC' in s_prediction:
             self.converter = CTCLabelConverter(character)
