@@ -18,6 +18,14 @@ from model import Model
 from test import validation
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
+try:
+    from apex import amp
+    from apex import fp16_utils
+    APEX_AVAILABLE = True
+    amp_handle = amp.init(enabled=True)
+except ModuleNotFoundError:
+    APEX_AVAILABLE = False
+
 
 def train(opt):
     """ dataset preparation """
@@ -43,7 +51,7 @@ def train(opt):
 
     if opt.rgb:
         opt.input_channel = 3
-    model = Model(opt)
+    model = Model(opt).cuda()
     print('model input parameters', opt.imgH, opt.imgW, opt.num_fiducial, opt.input_channel, opt.output_channel,
           opt.hidden_size, opt.num_class, opt.batch_max_length, opt.Transformation, opt.FeatureExtraction,
           opt.SequenceModeling, opt.Prediction)
@@ -63,9 +71,6 @@ def train(opt):
                 param.data.fill_(1)
             continue
 
-    # data parallel for multi-GPU
-    model = torch.nn.DataParallel(model).to(device)
-    model.train()
     if opt.saved_model != '':
         print(f'loading pretrained model from {opt.saved_model}')
         if opt.FT:
@@ -122,6 +127,13 @@ def train(opt):
     best_norm_ED = 1e+6
     i = start_iter
 
+    if APEX_AVAILABLE:
+        model, optimizer = amp.initialize(model, optimizer, opt_level="O2")
+
+     # data parallel for multi-GPU
+    model = torch.nn.DataParallel(model).cuda()
+    model.train()
+
     while(True):
         # train part
         image_tensors, labels = train_dataset.get_batch()
@@ -152,8 +164,13 @@ def train(opt):
             cost = criterion(preds.view(-1, preds.shape[-1]), target.contiguous().view(-1))
 
         model.zero_grad()
-        cost.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), opt.grad_clip)  # gradient clipping with 5 (Default)
+        if APEX_AVAILABLE:
+            with amp.scale_loss(cost, optimizer) as scaled_loss:
+                scaled_loss.backward()
+                fp16_utils.clip_grad_norm(model.parameters(), opt.grad_clip)  # gradient clipping with 5 (Default)
+        else:
+            cost.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), opt.grad_clip)  # gradient clipping with 5 (Default)
         optimizer.step()
 
         loss_avg.add(cost)
