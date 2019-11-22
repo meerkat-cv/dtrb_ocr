@@ -72,7 +72,10 @@ class DTRB_OCR:
         image = Image.fromarray(word_image_gray).convert('L')
         image = transformer(image)
         image = image.view(1, *image.size())
-        image = Variable(image).cuda()
+        if self.using_gpu:
+            image = Variable(image).cuda()
+        else:
+            image = Variable(image)
 
         batch_size = 1
         length_for_pred = torch.IntTensor(
