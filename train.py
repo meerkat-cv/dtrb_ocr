@@ -25,7 +25,10 @@ def train(opt):
     opt.batch_ratio = opt.batch_ratio.split('-')
     train_dataset = Batch_Balanced_Dataset(opt)
 
-    AlignCollate_valid = AlignCollate(imgH=opt.imgH, imgW=opt.imgW, keep_ratio_with_pad=opt.PAD)
+    AlignCollate_valid = AlignCollate(
+            imgH=opt.imgH, imgW=opt.imgW,
+            keep_ratio_with_pad=opt.PAD,
+        )
     valid_dataset = hierarchical_dataset(root=opt.valid_data, opt=opt)
     valid_loader = torch.utils.data.DataLoader(
         valid_dataset, batch_size=opt.batch_size,
@@ -177,6 +180,7 @@ def train(opt):
 
                 current_model_log = f'{"Current_accuracy":17s}: {current_accuracy:0.3f}, {"Current_norm_ED":17s}: {current_norm_ED:0.2f}'
                 print(current_model_log)
+                print('Number of validation images', len(preds))
                 log.write(current_model_log + '\n')
 
                 # keep best accuracy model (on valid dataset)
@@ -195,13 +199,15 @@ def train(opt):
                 print(f'{"Ground Truth":25s} | {"Prediction":25s} | Confidence Score & T/F')
                 log.write(f'{"Ground Truth":25s} | {"Prediction":25s} | {"Confidence Score"}\n')
                 print('-' * 80)
-                for gt, pred, confidence in zip(labels[:5], preds[:5], confidence_score[:5]):
+                for idx,(gt, pred, confidence) in enumerate(zip(labels, preds, confidence_score)):
                     if 'Attn' in opt.Prediction:
                         gt = gt[:gt.find('[s]')]
                         pred = pred[:pred.find('[s]')]
 
-                    print(f'{gt:25s} | {pred:25s} | {confidence:0.4f}\t{str(pred == gt)}')
-                    log.write(f'{gt:25s} | {pred:25s} | {confidence:0.4f}\t{str(pred == gt)}\n')
+                    log.write(f'{gt:40s} | {pred:40s} | {confidence:0.4f}\t{str(pred == gt)}\n')
+                    if idx<40:
+                        print(f'{gt:40s} | {pred:40s} | {confidence:0.4f}\t{str(pred == gt)}\n')
+
                 print('-' * 80)
 
         # save model per 1e+5 iter.
@@ -226,6 +232,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_iter', type=int, default=300000, help='number of iterations to train for')
     parser.add_argument('--valInterval', type=int, default=2000, help='Interval between each validation')
     parser.add_argument('--saved_model', default='', help="path to model to continue training")
+    parser.add_argument('--do_augmentation', action='store_true', help='Whether to use augmentation on training')
     parser.add_argument('--FT', action='store_true', help='whether to do fine-tuning')
     parser.add_argument('--adam', action='store_true', help='Whether to use adam (default is Adadelta)')
     parser.add_argument('--lr', type=float, default=1, help='learning rate, default=1.0 for Adadelta')

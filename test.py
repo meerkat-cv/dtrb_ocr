@@ -74,6 +74,8 @@ def validation(model, criterion, evaluation_loader, converter, opt):
     length_of_data = 0
     infer_time = 0
     valid_loss_avg = Averager()
+    preds_list, labels_list = [], []
+    confidence_score_list_list = []
 
     for i, (image_tensors, labels) in enumerate(evaluation_loader):
         batch_size = image_tensors.size(0)
@@ -141,10 +143,13 @@ def validation(model, criterion, evaluation_loader, converter, opt):
                 confidence_score = 0  # for empty pred case, when prune after "end of sentence" token ([s])
             confidence_score_list.append(confidence_score)
             # print(pred, gt, pred==gt, confidence_score)
+        preds_list += preds_str
+        labels_list += labels
+        confidence_score_list_list += confidence_score_list
 
     accuracy = n_correct / float(length_of_data) * 100
 
-    return valid_loss_avg.val(), accuracy, norm_ED, preds_str, confidence_score_list, labels, infer_time, length_of_data
+    return valid_loss_avg.val(), accuracy, norm_ED, preds_list, confidence_score_list_list, labels_list, infer_time, length_of_data
 
 
 def test(opt):

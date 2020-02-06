@@ -5,6 +5,7 @@ import six
 import math
 import lmdb
 import torch
+import cv2
 
 from natsort import natsorted
 from PIL import Image
@@ -22,11 +23,14 @@ class Batch_Balanced_Dataset(object):
         For example, when select_data is "MJ-ST" and batch_ratio is "0.5-0.5",
         the 50% of the batch is filled with MJ and the other 50% of the batch is filled with ST.
         """
-        # print('-' * 80)
-        # print(f'dataset_root: {opt.train_data}\nopt.select_data: {opt.select_data}\nopt.batch_ratio: {opt.batch_ratio}')
+        print('-' * 80)
+        print(f'dataset_root: {opt.train_data}\nopt.select_data: {opt.select_data}\nopt.batch_ratio: {opt.batch_ratio}')
         assert len(opt.select_data) == len(opt.batch_ratio)
 
-        _AlignCollate = AlignCollate(imgH=opt.imgH, imgW=opt.imgW, keep_ratio_with_pad=opt.PAD)
+        _AlignCollate = AlignCollate(
+                imgH=opt.imgH, imgW=opt.imgW,
+                keep_ratio_with_pad=opt.PAD,
+                do_augmentation=opt.do_augmentation)
         self.data_loader_list = []
         self.dataloader_iter_list = []
         batch_size_list = []
@@ -47,8 +51,8 @@ class Batch_Balanced_Dataset(object):
             indices = range(total_number_dataset)
             _dataset, _ = [Subset(_dataset, indices[offset - length:offset])
                            for offset, length in zip(_accumulate(dataset_split), dataset_split)]
-            # print(f'num total samples of {selected_d}: {total_number_dataset} x {opt.total_data_usage_ratio} (total_data_usage_ratio) = {len(_dataset)}')
-            # print(f'num samples of {selected_d} per batch: {opt.batch_size} x {float(batch_ratio_d)} (batch_ratio) = {_batch_size}')
+            print(f'num total samples of {selected_d}: {total_number_dataset} x {opt.total_data_usage_ratio} (total_data_usage_ratio) = {len(_dataset)}')
+            print(f'num samples of {selected_d} per batch: {opt.batch_size} x {float(batch_ratio_d)} (batch_ratio) = {_batch_size}')
             batch_size_list.append(str(_batch_size))
             Total_batch_size += _batch_size
 
@@ -59,10 +63,10 @@ class Batch_Balanced_Dataset(object):
                 collate_fn=_AlignCollate, pin_memory=True)
             self.data_loader_list.append(_data_loader)
             self.dataloader_iter_list.append(iter(_data_loader))
-        # print('-' * 80)
-        # print('Total_batch_size: ', '+'.join(batch_size_list), '=', str(Total_batch_size))
+        print('-' * 80)
+        print('Total_batch_size: ', '+'.join(batch_size_list), '=', str(Total_batch_size))
         opt.batch_size = Total_batch_size
-        # print('-' * 80)
+        print('-' * 80)
 
     def get_batch(self):
         balanced_batch_images = []
@@ -89,7 +93,7 @@ class Batch_Balanced_Dataset(object):
 def hierarchical_dataset(root, opt, select_data='/'):
     """ select_data='/' contains all sub-directory of root directory """
     dataset_list = []
-    # print(f'dataset_root:    {root}\t dataset: {select_data[0]}')
+    print(f'dataset_root:    {root}\t dataset: {select_data[0]}')
     for dirpath, dirnames, filenames in os.walk(root+'/'):
         if not dirnames:
             select_flag = False
@@ -100,7 +104,7 @@ def hierarchical_dataset(root, opt, select_data='/'):
 
             if select_flag:
                 dataset = LmdbDataset(dirpath, opt)
-                # print(f'sub-directory:\t/{os.path.relpath(dirpath, root)}\t num samples: {len(dataset)}')
+                print(f'sub-directory:\t/{os.path.relpath(dirpath, root)}\t num samples: {len(dataset)}')
                 dataset_list.append(dataset)
 
     concatenated_dataset = ConcatDataset(dataset_list)
@@ -135,13 +139,12 @@ class LmdbDataset(Dataset):
                     label = txn.get(label_key).decode('utf-8')
 
                     if len(label) > self.opt.batch_max_length:
-                        # print(f'The length of the label is longer than max_length: length
-                        # {len(label)}, {label} in dataset {self.root}')
+                        # print(f'The length of the label is longer than max_length: length {len(label)}, {label} in dataset {self.root}')
                         continue
 
                     # By default, images containing characters which are not in opt.character are filtered.
                     # You can add [UNK] token to `opt.character` in utils.py instead of this filtering.
-                    # out_of_char = f'[^{self.opt.character}]'
+                    out_of_char = f'[^{self.opt.character}]'
                     if re.search(out_of_char, label.lower()):
                         continue
 
@@ -172,7 +175,7 @@ class LmdbDataset(Dataset):
                     img = Image.open(buf).convert('L')
 
             except IOError:
-                # print(f'Corrupted image for {index}')
+                print(f'Corrupted image for {index}')
                 # make dummy image and dummy label for corrupted image.
                 if self.opt.rgb:
                     img = Image.new('RGB', (self.opt.imgW, self.opt.imgH))
@@ -184,7 +187,7 @@ class LmdbDataset(Dataset):
                 label = label.lower()
 
             # We only train and evaluate on alphanumerics (or pre-defined character set in train.py)
-            # out_of_char = f'[^{self.opt.character}]'
+            out_of_char = f'[^{self.opt.character}]'
             label = re.sub(out_of_char, '', label)
 
         return (img, label)
@@ -217,7 +220,7 @@ class RawDataset(Dataset):
                 img = Image.open(self.image_path_list[index]).convert('L')
 
         except IOError:
-            # print(f'Corrupted image for {index}')
+            print(f'Corrupted image for {index}')
             # make dummy image and dummy label for corrupted image.
             if self.opt.rgb:
                 img = Image.new('RGB', (self.opt.imgW, self.opt.imgH))
@@ -263,14 +266,17 @@ class NormalizePAD(object):
 
 class AlignCollate(object):
 
-    def __init__(self, imgH=32, imgW=100, keep_ratio_with_pad=False):
+    def __init__(self, imgH=32, imgW=100, keep_ratio_with_pad=False, do_augmentation=False):
         self.imgH = imgH
         self.imgW = imgW
         self.keep_ratio_with_pad = keep_ratio_with_pad
+        self.do_augmentation = do_augmentation
 
     def __call__(self, batch):
         batch = filter(lambda x: x is not None, batch)
         images, labels = zip(*batch)
+        if self.do_augmentation:
+            images = [self._augment(im) for im in images]
 
         if self.keep_ratio_with_pad:  # same concept with 'Rosetta' paper
             resized_max_w = self.imgW
@@ -298,6 +304,25 @@ class AlignCollate(object):
             image_tensors = torch.cat([t.unsqueeze(0) for t in image_tensors], 0)
 
         return image_tensors, labels
+
+    def _augment(self, im):
+        from augmentations.plates_br import seq
+
+        cv_img = np.array(im)
+        # img_all = np.zeros((cv_img.shape[0]*2,cv_img.shape[1]), dtype=np.uint8)
+        is_gray = len(cv_img.shape) == 2
+        if is_gray:
+            cv_img = cv2.cvtColor(cv_img, cv2.COLOR_GRAY2BGR)
+        aug_img = seq.augment_images([cv_img,])[0]
+        if len(cv_img.shape) != 2 and is_gray:
+            aug_img = cv2.cvtColor(aug_img, cv2.COLOR_BGR2GRAY)
+        # cv_img = cv2.cvtColor(cv_img, cv2.COLOR_BGR2GRAY)
+        # img_all[0:cv_img.shape[0],:] = aug_img
+        # img_all[cv_img.shape[0]:,:] = cv_img
+        # cv2.imwrite('image.png', img_all)
+
+        return Image.fromarray(aug_img)
+
 
 
 def tensor2im(image_tensor, imtype=np.uint8):
