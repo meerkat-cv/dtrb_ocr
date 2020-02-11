@@ -8,15 +8,17 @@ import torch.backends.cudnn as cudnn
 import torch.utils.data
 import torch.nn.functional as F
 from torch.autograd import Variable
+from uuid import uuid4
 
 
 from .utils import CTCLabelConverter, AttnLabelConverter
-from .dataset import ResizeNormalize
+from .dataset import ResizeNormalize, NormalizePAD
 from .model import Model
 
 # the following is the alphabet, we're not supporting case-sensitive yet.
 # character = '0123456789abcdefghijklmnopqrstuvwxyz'
 character = '0123456789abcdefghijklmnopqrstuvwxyz/:,.()-'
+character = '0123456789abcdefghijklmnopqrstuvwxyz/:,.() -'
 
 class DTRB_OCR:
 
@@ -29,6 +31,7 @@ class DTRB_OCR:
         filename, file_extension = os.path.splitext(os.path.basename(model_path))
 
         s_transformer, s_feature, s_sequence_model, s_prediction = filename.split("-")[:4]
+        # s_transformer = 'None'
         logging.warning("s_transformer: "+str(s_transformer))
         if 'CTC' in s_prediction:
             self.converter = CTCLabelConverter(character)
@@ -55,18 +58,21 @@ class DTRB_OCR:
             "Prediction": s_prediction,
             "num_fiducial": 20,
             "imgH": 32,
-            "imgW": 100,
+            "imgW": 500,#100,
             "input_channel": 1,  # no RGB yet
             "output_channel": 512,
             "hidden_size": 256,
             "num_class": num_class,
-            "batch_max_length": 25
+            "batch_max_length": 40
         }
 
         return AttributeDict(options)
 
     def ocr_word(self, word_image_gray):
-        transformer = ResizeNormalize((self.options.imgW, self.options.imgH))
+        img_w = self.options.imgH/word_image_gray.shape[0]*word_image_gray.shape[1]
+        img_w = min(self.options.imgW, img_w)
+        word_image_gray = cv2.resize(word_image_gray, (int(img_w),self.options.imgH))
+        transformer = NormalizePAD((self.options.input_channel, self.options.imgH, self.options.imgW))
         
         # img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         image = Image.fromarray(word_image_gray).convert('L')
