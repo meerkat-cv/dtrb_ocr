@@ -10,7 +10,7 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 
 from .utils import CTCLabelConverter, AttnLabelConverter
-from .dataset import ResizeNormalize
+from .dataset import ResizeNormalize, NormalizePAD
 from .model import Model
 
 class DTRB_OCR:
@@ -60,7 +60,7 @@ class DTRB_OCR:
             "output_channel": 512,
             "hidden_size": 256,
             "num_class": num_class,
-            "batch_max_length": 25,
+            "batch_max_length": 40,
         }
 
         return AttributeDict(options)
@@ -68,7 +68,12 @@ class DTRB_OCR:
     def ocr_word(self, image):
         if len(image.shape) > 2:
             image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        transformer = ResizeNormalize((self.options.imgW, self.options.imgH))
+
+        img_w = self.options.imgH/image.shape[0]*image.shape[1]
+        img_w = min(self.options.imgW, img_w)
+        image = cv2.resize(image, (int(img_w),self.options.imgH))
+        transformer = NormalizePAD((self.options.input_channel, self.options.imgH, self.options.imgW))
+
 
         image = Image.fromarray(image).convert('L')
         image = transformer(image)
