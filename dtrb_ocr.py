@@ -9,18 +9,13 @@ import torch.utils.data
 import torch.nn.functional as F
 from torch.autograd import Variable
 
-
-from .utils import CTCLabelConverter, AttnLabelConverter
-from .dataset import ResizeNormalize
-from .model import Model
-
-# the following is the alphabet, we're not supporting case-sensitive yet.
-# character = '0123456789abcdefghijklmnopqrstuvwxyz'
-character = '0123456789abcdefghijklmnopqrstuvwxyz/:,.()-'
+from utils import CTCLabelConverter, AttnLabelConverter
+from dataset import ResizeNormalize
+from model import Model
 
 class DTRB_OCR:
 
-    def __init__(self, model_path, use_gpu = False):
+    def __init__(self, model_path, alphabet, imgW=100, use_gpu = False):
         self.using_gpu = use_gpu
 
         self.device = torch.device('cuda' if self.using_gpu else 'cpu')
@@ -29,13 +24,17 @@ class DTRB_OCR:
         filename, file_extension = os.path.splitext(os.path.basename(model_path))
 
         s_transformer, s_feature, s_sequence_model, s_prediction = filename.split("-")[:4]
-        logging.warning("s_transformer: "+str(s_transformer))
+        logging.debug("s_transformer: "+str(s_transformer))
         if 'CTC' in s_prediction:
-            self.converter = CTCLabelConverter(character)
+            self.converter = CTCLabelConverter(alphabet)
         else:
-            self.converter = AttnLabelConverter(character)
-        self.options = self._get_default_options(s_transformer, s_feature, s_sequence_model, s_prediction, len(self.converter.character))
-        
+            self.converter = AttnLabelConverter(alphabet)
+        self.options = self._get_default_options(
+                s_transformer, s_feature, s_sequence_model,
+                s_prediction, len(self.converter.character),
+                imgW
+            )
+
         self.model = Model(self.options)
         self.model = torch.nn.DataParallel(self.model).to(self.device)
 
@@ -45,9 +44,10 @@ class DTRB_OCR:
             self.model.load_state_dict(torch.load(model_path, map_location=lambda storage, loc: storage))
         
         self.model.eval()
-        # torch.Size([10, 1, 32, 100])
 
-    def _get_default_options(self, s_transformer, s_feature, s_sequence_model, s_prediction, num_class):
+    def _get_default_options(
+            self, s_transformer, s_feature, s_sequence_model,
+            s_prediction, num_class, imgW):
         options = {
             "Transformation": s_transformer,
             "FeatureExtraction": s_feature,
@@ -55,21 +55,22 @@ class DTRB_OCR:
             "Prediction": s_prediction,
             "num_fiducial": 20,
             "imgH": 32,
-            "imgW": 100,
+            "imgW": imgW,
             "input_channel": 1,  # no RGB yet
             "output_channel": 512,
             "hidden_size": 256,
             "num_class": num_class,
-            "batch_max_length": 25
+            "batch_max_length": 25,
         }
 
         return AttributeDict(options)
 
-    def ocr_word(self, word_image_gray):
+    def ocr_word(self, image):
+        if len(image.shape) > 2:
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         transformer = ResizeNormalize((self.options.imgW, self.options.imgH))
-        
-        # img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        image = Image.fromarray(word_image_gray).convert('L')
+
+        image = Image.fromarray(image).convert('L')
         image = transformer(image)
         image = image.view(1, *image.size())
         if self.using_gpu:
@@ -86,7 +87,7 @@ class DTRB_OCR:
         if 'CTC' in self.options.Prediction:
             preds = self.model(image, text_for_pred).log_softmax(2)
 
-            # Select max probabilty (greedy decoding) then decode index to character
+            # Select max probabilty (greedy decoding) then decode index to alphabet
             preds_size = torch.IntTensor([preds.size(1)] * batch_size)
             _, preds_index = preds.max(2)
             preds_index = preds_index.view(-1)
@@ -96,15 +97,13 @@ class DTRB_OCR:
         else:
             preds = self.model(image, text_for_pred, is_train=False)
 
-            # select max probabilty (greedy decoding) then decode index to character
+            # select max probabilty (greedy decoding) then decode index to alphabet
             _, preds_index = preds.max(2)
             preds_str = self.converter.decode(preds_index, length_for_pred)
 
         preds_prob = F.softmax(preds, dim=2)
         preds_max_prob, _ = preds_prob.max(dim=2)
-        # logging.warning("preds_max_prob"+str(preds_max_prob))
 
-        # for pred, pred_max_prob in zip(preds_str, preds_max_prob):
         if 'Attn' in self.options.Prediction:
             pred_EOS = preds_str[0].find('[s]')
             pred = preds_str[0][:pred_EOS]  # prune after "end of sentence" token ([s])
