@@ -9,9 +9,9 @@ import torch.utils.data
 import torch.nn.functional as F
 from torch.autograd import Variable
 
-from utils import CTCLabelConverter, AttnLabelConverter
-from dataset import ResizeNormalize
-from model import Model
+from .utils import CTCLabelConverter, AttnLabelConverter
+from .dataset import ResizeNormalize
+from .model import Model
 
 class DTRB_OCR:
 
