@@ -14,16 +14,19 @@ from .utils import CTCLabelConverter, AttnLabelConverter
 from .dataset import ResizeNormalize
 from .model import Model
 
-# the following is the alphabet, we're not supporting case-sensitive yet.
-# character = '0123456789abcdefghijklmnopqrstuvwxyz'
-character = '0123456789abcdefghijklmnopqrstuvwxyz/:,.()-'
+import string
 
 class DTRB_OCR:
 
-    def __init__(self, model_path, use_gpu = False):
+    def __init__(self, model_path, use_gpu = False, case_sensitive=False):
         self.using_gpu = use_gpu
 
         self.device = torch.device('cuda' if self.using_gpu else 'cpu')
+
+        if case_sensitive:
+            self.character = string.printable[:-6]
+        else:
+            self.character = '0123456789abcdefghijklmnopqrstuvwxyz/:,.()-'
 
         # IMPORTANT: will define a lot of params given the model_name
         filename, file_extension = os.path.splitext(os.path.basename(model_path))
@@ -31,9 +34,9 @@ class DTRB_OCR:
         s_transformer, s_feature, s_sequence_model, s_prediction = filename.split("-")[:4]
         logging.warning("s_transformer: "+str(s_transformer))
         if 'CTC' in s_prediction:
-            self.converter = CTCLabelConverter(character)
+            self.converter = CTCLabelConverter(self.character)
         else:
-            self.converter = AttnLabelConverter(character)
+            self.converter = AttnLabelConverter(self.character)
         self.options = self._get_default_options(s_transformer, s_feature, s_sequence_model, s_prediction, len(self.converter.character))
         
         self.model = Model(self.options)
