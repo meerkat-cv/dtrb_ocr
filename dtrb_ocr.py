@@ -60,7 +60,7 @@ class DTRB_OCR:
             "output_channel": 512,
             "hidden_size": 256,
             "num_class": num_class,
-            "batch_max_length": 70,
+            "batch_max_length": 50,
         }
 
         return AttributeDict(options)
