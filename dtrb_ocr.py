@@ -15,8 +15,9 @@ from .model import Model
 
 class DTRB_OCR:
 
-    def __init__(self, model_path, alphabet, imgW=100, use_gpu = False):
+    def __init__(self, model_path, alphabet, imgW=100, batch_max_length=40, PAD=False, use_gpu = False):
         self.using_gpu = use_gpu
+        self.PAD = PAD
 
         self.device = torch.device('cuda' if self.using_gpu else 'cpu')
 
@@ -32,7 +33,7 @@ class DTRB_OCR:
         self.options = self._get_default_options(
                 s_transformer, s_feature, s_sequence_model,
                 s_prediction, len(self.converter.character),
-                imgW
+                imgW, batch_max_length
             )
 
         self.model = Model(self.options)
@@ -47,7 +48,7 @@ class DTRB_OCR:
 
     def _get_default_options(
             self, s_transformer, s_feature, s_sequence_model,
-            s_prediction, num_class, imgW):
+            s_prediction, num_class, imgW, batch_max_length):
         options = {
             "Transformation": s_transformer,
             "FeatureExtraction": s_feature,
@@ -60,7 +61,7 @@ class DTRB_OCR:
             "output_channel": 512,
             "hidden_size": 256,
             "num_class": num_class,
-            "batch_max_length": 50,
+            "batch_max_length": batch_max_length,
         }
 
         return AttributeDict(options)
@@ -69,11 +70,13 @@ class DTRB_OCR:
         if len(image.shape) > 2:
             image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-        img_w = self.options.imgH/image.shape[0]*image.shape[1]
-        img_w = min(self.options.imgW, img_w)
-        image = cv2.resize(image, (int(img_w),self.options.imgH))
-        transformer = NormalizePAD((self.options.input_channel, self.options.imgH, self.options.imgW))
-
+        if self.PAD:
+            img_w = self.options.imgH/image.shape[0]*image.shape[1]
+            img_w = min(self.options.imgW, img_w)
+            image = cv2.resize(image, (int(img_w),self.options.imgH))
+            transformer = NormalizePAD((self.options.input_channel, self.options.imgH, self.options.imgW))
+        else:
+            transformer = ResizeNormalize((self.options.imgW, self.options.imgH))
 
         image = Image.fromarray(image).convert('L')
         image = transformer(image)
