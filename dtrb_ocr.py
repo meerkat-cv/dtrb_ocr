@@ -70,7 +70,7 @@ class DTRB_OCR:
     def ocr_batch(self, images):
         for i in range(len(images)):
             if len(images[i].shape) > 2:
-                images[i] = cv2.cvtColor(images[i], cv2.COLOR_BGR2GRAY)
+                images[i] = cv2.cvtColor(images[i], cv2.COLOR_RGB2GRAY)
             if images[i].shape[0] != self.options.imgH:
                 if self.PAD:
                     scale = self.options.imgH/images[i].shape[0]
