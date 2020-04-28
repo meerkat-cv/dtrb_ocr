@@ -2,6 +2,7 @@ import os
 import logging
 
 import cv2
+import numpy as np
 from PIL import Image
 import torch
 import torch.backends.cudnn as cudnn
@@ -66,64 +67,65 @@ class DTRB_OCR:
 
         return AttributeDict(options)
 
-    def ocr_word(self, image):
-        if len(image.shape) > 2:
-            image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    def ocr_batch(self, images):
+        for i in range(len(images)):
+            if len(images[i].shape) > 2:
+                images[i] = cv2.cvtColor(images[i], cv2.COLOR_BGR2GRAY)
+            if images[i].shape[0] != self.options.imgH:
+                if self.PAD:
+                    scale = self.options.imgH/images[i].shape[0]
+                    W = min(self.options.imgW, int(images[i].shape[1]*scale))
+                else:
+                    W = self.options.imgW
+                images[i] = cv2.resize(images[i], (W, self.options.imgH))
+            if self.PAD:
+                blank = np.zeros((1, self.options.imgH, self.options.imgW))
+                blank[0,:,0:images[i].shape[1]] = images[i]
+                images[i] = blank
+            images[i] = (images[i].astype(np.float32)/255.0-0.5)*2.0
 
-        if self.PAD:
-            img_w = self.options.imgH/image.shape[0]*image.shape[1]
-            img_w = min(self.options.imgW, img_w)
-            image = cv2.resize(image, (int(img_w),self.options.imgH))
-            transformer = NormalizePAD((self.options.input_channel, self.options.imgH, self.options.imgW))
-        else:
-            transformer = ResizeNormalize((self.options.imgW, self.options.imgH))
-
-        image = Image.fromarray(image).convert('L')
-        image = transformer(image)
-        image = image.view(1, *image.size())
-        if self.using_gpu:
-            image = Variable(image).cuda()
-        else:
-            image = Variable(image)
-
-        batch_size = 1
-        length_for_pred = torch.IntTensor(
-            [self.options.batch_max_length] * 1).to(self.device)
-        text_for_pred = torch.LongTensor(
-            1, self.options.batch_max_length + 1).fill_(0).to(self.device)
+        image_batch = np.asarray(images)
+        image = torch.from_numpy(image_batch).to(self.device)
+        batch_size = len(images)
+        # For max length prediction
+        length_for_pred = torch.IntTensor([self.options.batch_max_length] * batch_size).to(self.device)
+        text_for_pred = torch.LongTensor(batch_size, self.options.batch_max_length + 1).fill_(0).to(self.device)
 
         if 'CTC' in self.options.Prediction:
-            preds = self.model(image, text_for_pred).log_softmax(2)
+            preds = self.model(image, text_for_pred)
 
-            # Select max probabilty (greedy decoding) then decode index to alphabet
+            # Select max probabilty (greedy decoding) then decode index to character
             preds_size = torch.IntTensor([preds.size(1)] * batch_size)
             _, preds_index = preds.max(2)
             preds_index = preds_index.view(-1)
-            preds_str = self.converter.decode(
-                preds_index.data, preds_size.data)
+            preds_str = self.converter.decode(preds_index.data, preds_size.data)
 
         else:
             preds = self.model(image, text_for_pred, is_train=False)
 
-            # select max probabilty (greedy decoding) then decode index to alphabet
+            # select max probabilty (greedy decoding) then decode index to character
             _, preds_index = preds.max(2)
             preds_str = self.converter.decode(preds_index, length_for_pred)
 
         preds_prob = F.softmax(preds, dim=2)
         preds_max_prob, _ = preds_prob.max(dim=2)
+        conf_list, pred_list = [], []
+        for pred, pred_max_prob in zip(preds_str, preds_max_prob):
+            if 'Attn' in self.options.Prediction:
+                pred_EOS = pred.find('[s]')
+                pred = pred[:pred_EOS]  # prune after "end of sentence" token ([s])
+                pred_max_prob = pred_max_prob[:pred_EOS]
 
-        if 'Attn' in self.options.Prediction:
-            pred_EOS = preds_str[0].find('[s]')
-            pred = preds_str[0][:pred_EOS]  # prune after "end of sentence" token ([s])
-            pred_max_prob = preds_max_prob[0][:pred_EOS]
-        else:
-            pred_max_prob = preds_max_prob[0]
-            pred = preds_str[0]
-            
-        # calculate confidence score (= multiply of pred_max_prob)
-        confidence_score = float(pred_max_prob.cumprod(dim=0)[-1])
+            # calculate confidence score (= multiply of pred_max_prob)
+            conf_list.append(float(pred_max_prob.cumprod(dim=0)[-1]))
+            pred_list.append(pred)
 
-        return pred, confidence_score
+        return pred_list, conf_list
+
+
+    def ocr_word(self, image):
+        preds, confs = self.ocr_batch([image])
+        return preds[0], confs[0]
 
 class AttributeDict(dict):
     def __getattr__(self, attr):
