@@ -86,7 +86,7 @@ class DTRB_OCR:
                         images[i],
                         ((0,0),(0,max(0,self.options.imgW-images[i].shape[1]))),
                         'edge')
-                images[i] = images[i].reshape((1,self.options.imgH, self.options.imgW))
+            images[i] = images[i].reshape((1,self.options.imgH, self.options.imgW))
             images[i] = (images[i].astype(np.float32)/255.0-0.5)*2.0
 
         image_batch = np.asarray(images)
