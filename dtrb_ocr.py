@@ -72,20 +72,23 @@ class DTRB_OCR:
         for i in range(len(images)):
             if len(images[i].shape) > 2:
                 images[i] = cv2.cvtColor(images[i], cv2.COLOR_BGR2GRAY)
-            if images[i].shape[0] != self.options.imgH:
-                if self.PAD:
+            if self.PAD:
+                if (images[i].shape[0] != self.options.imgH or
+                        images[i].shape[1] > self.options.imgW):
                     scale = self.options.imgH/images[i].shape[0]
                     W = min(self.options.imgW, math.ceil(images[i].shape[1]*scale))
-                else:
-                    W = self.options.imgW
-                tmp_img = Image.fromarray(images[i])
-                tmp_img = tmp_img.resize((W, self.options.imgH), Image.BICUBIC)
-                images[i] = np.array(tmp_img)
-            if self.PAD:
+                    tmp_img = Image.fromarray(images[i])
+                    tmp_img = tmp_img.resize((W, self.options.imgH), Image.BICUBIC)
+                    images[i] = np.array(tmp_img)
                 images[i] = np.pad(
-                        images[i],
-                        ((0,0),(0,max(0,self.options.imgW-images[i].shape[1]))),
-                        'edge')
+                    images[i],
+                    ((0,0),(0,self.options.imgW-images[i].shape[1])),
+                    'edge')
+            else:
+                tmp_img = Image.fromarray(images[i])
+                tmp_img = tmp_img.resize((self.options.imgW, self.options.imgH), Image.BICUBIC)
+                images[i] = np.array(tmp_img)
+
             images[i] = images[i].reshape((1,self.options.imgH, self.options.imgW))
             images[i] = (images[i].astype(np.float32)/255.0-0.5)*2.0
 
